@@ -1,10 +1,8 @@
-# 🏥 Medical RAG Application
+# Medical RAG Application
 
 A simple **Medical RAG\* application that supports both **common medical knowledge** and **user-specific (patient) documents\*\*, enabling secure and contextual AI-powered conversations.
 
----
-
-## High-Level Design
+### High-Level Design
 
 This is a conversational AI application built on a RAG architecture:
 
@@ -12,12 +10,12 @@ This is a conversational AI application built on a RAG architecture:
 - User-specific medical records are private and scoped per user
 - Both scopes are searched together at query time to generate grounded responses
 
-**Design diagram:**  
+Target Design
 ![Architecture Design](design.png)
 
 ---
 
-## 🧠 Embeddings & Knowledge Storage
+### 🧠 Embeddings & Knowledge Storage
 
 - Uses an embedding pipeline to generate vector embeddings
 - Embeddings are stored in **Postgres with pgvector**
@@ -37,18 +35,16 @@ This is a conversational AI application built on a RAG architecture:
     - `scope = "user"`
     - `owner_id = <user_id>`
 
----
-
-## RAG Conversations
+#### RAG Conversations
 
 The application exposes APIs that support:
 
-### 📤 Document Upload
+#### Document Upload
 
 - Users can upload documents
 - Documents are embedded and stored under the **user scope**
 
-### 🤖 Chat / Completions API
+#### Chat / Completions API
 
 - OpenAI-compatible, schema-based API
 - At query time:
@@ -58,15 +54,13 @@ The application exposes APIs that support:
   - Attaches retrieved context to the LLM prompt
   - Returns a contextual and grounded response
 
----
-
-## 🔐 Authentication & Sign-Up
+#### 🔐 Authentication & Sign-Up
 
 - Basic sign-up using:
   - User ID
   - Password
 
-## ▶️ Usage
+#### Run
 
 - sample .env in boht /rag and /ui
 
@@ -85,3 +79,9 @@ UI
 npm install
 npm run:dev
 ```
+
+#### Advanced Features
+
+- Create oAuth based signup with IDP like google.
+- Protect all APIs with JWT
+- Extract userid from JWT and attach in retrive queries to protect access controls of user specific knwoledge to specfic users.
