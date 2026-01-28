@@ -7,6 +7,8 @@ from fastapi import Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, jwk
 from jose.utils import base64url_decode
+from fastapi.responses import FileResponse
+from fastapi import Path
 
 
 from dotenv import load_dotenv
@@ -100,34 +102,31 @@ def verify_supabase_jwt(
     credentials: HTTPAuthorizationCredentials = Security(security),
 ) -> str:
     token = credentials.credentials
-    print("Token received:", token)
 
     try:
-        # Step 1: Fetch JWKS from Supabase
+        #  Fetch JWKS from Supabase
         jwks = requests.get(JWKS_URL).json()
         headers = jwt.get_unverified_header(token)
         kid = headers.get("kid")
         if not kid:
             raise HTTPException(status_code=401, detail="Invalid token header: no kid")
 
-        # Step 2: Find the key with matching kid
+        #  Find the key with matching kid
         key_data = next((k for k in jwks["keys"] if k["kid"] == kid), None)
         if not key_data:
             raise HTTPException(
                 status_code=401, detail="Public key not found for token"
             )
 
-        # Step 3: Construct JWK public key
         public_key = jwk.construct(key_data)
 
-        # Step 4: Split token to verify signature
         message, encoded_signature = token.rsplit(".", 1)
         decoded_signature = base64url_decode(encoded_signature.encode("utf-8"))
 
         if not public_key.verify(message.encode("utf-8"), decoded_signature):
             raise HTTPException(status_code=401, detail="Invalid token signature")
 
-        # Step 5: Decode claims (without verifying signature again)
+        # Decode claims (without verifying signature again)
         claims = jwt.get_unverified_claims(token)
 
         # Optional: verify expiry
@@ -212,28 +211,30 @@ def extract_page_no(doc: Document, fallback: int) -> int:
     return fallback
 
 
+@app.get("/pdf/{filename}")
+def get_pdf(filename: str):
+    file_path = os.path.join("temp_pdfs", filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "PDF not found")
+    return FileResponse(file_path, media_type="application/pdf")
+
+
 def ingest_pdf_urls(pdf_paths: list[str], user_id: str):
+    PDF_DIR = "temp_pdfs"
+    os.makedirs(PDF_DIR, exist_ok=True)
 
     for path in pdf_paths:
-        # If it's a URL → download
-        if path.startswith("http://") or path.startswith("https://"):
-            response = requests.get(path, timeout=60)
-            response.raise_for_status()
+        filename = os.path.basename(path)
+        persistent_path = os.path.join(PDF_DIR, filename)
 
-            filename = get_filename(path)
-            with open(filename, "wb") as f:
-                f.write(response.content)
+        # Copy file only if it's not already in the persistent folder
+        if os.path.abspath(path) != os.path.abspath(persistent_path):
+            shutil.copy(path, persistent_path)
 
-            file_path = filename
-            source_url = path
+        file_path = persistent_path
+        source_url = f"/pdf/{filename}"
 
-        # Else → local uploaded file
-        else:
-            file_path = path
-            source_url = path  # stored as reference
-
-            filename = os.path.basename(file_path)
-
+        # Load PDF and process
         loader = DoclingLoader(file_path=file_path)
         docs = loader.load()
 
@@ -265,6 +266,10 @@ def ingest_pdf_urls(pdf_paths: list[str], user_id: str):
 
 
 # ---------- INGEST ENDPOINT ----------
+PDF_DIR = "temp_pdfs"
+os.makedirs(PDF_DIR, exist_ok=True)
+
+
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest_pdf(
     file: UploadFile = File(...),
@@ -274,20 +279,18 @@ async def ingest_pdf(
         if file.content_type != "application/pdf":
             raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-        # Create temp directory
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_path = Path(tmpdir) / file.filename
+        # Persistent file path
+        saved_path = os.path.join(PDF_DIR, file.filename)
+        with open(saved_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-            with open(temp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-            # Pass temp file path as "url" equivalent
-            ingest_pdf_urls([str(temp_path)], user_id)
+        # Pass the persistent file path to ingestion
+        ingest_pdf_urls([saved_path], user_id)
 
         return IngestResponse(
             status="success",
             message="PDF uploaded and ingested successfully",
-            processed_urls=[file.filename],
+            processed_urls=[f"/pdf/{file.filename}"],
         )
 
     except Exception as e:
@@ -370,6 +373,8 @@ def chat(
                     "url": d.metadata["url"],
                 }
             )
+
+            print("Citations being sent to frontend:", citations)
 
     return {
         "choices": [

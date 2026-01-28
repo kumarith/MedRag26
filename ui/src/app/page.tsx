@@ -110,6 +110,7 @@ export default function Page() {
         });
 
         const data = await res.json();
+        console.log("Chat response:", data);
 
         setMessages([
             ...newMessages,
@@ -225,7 +226,7 @@ export default function Page() {
                                             {c.section && <> — <em>{c.section}</em></>}
                                             {' '}
                                             <a
-                                                href={c.url}
+                                                href={`http://localhost:8000${c.url}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="text-blue-600 underline"
