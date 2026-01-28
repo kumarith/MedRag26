@@ -21,6 +21,10 @@ import tiktoken
 from sentence_transformers import SentenceTransformer
 from langchain_docling.loader import DoclingLoader
 from langchain_core.documents import Document
+from fastapi import UploadFile, File
+import tempfile
+import shutil
+from pathlib import Path
 
 # ---------- ENV ----------
 load_dotenv()
@@ -60,10 +64,7 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-
-# ---------- PDF Ingest Models ----------
-class IngestRequest(BaseModel):
-    filepath: HttpUrl
+# ---------- Ingest Models ----------
 
 
 class IngestResponse(BaseModel):
@@ -211,17 +212,29 @@ def extract_page_no(doc: Document, fallback: int) -> int:
     return fallback
 
 
-def ingest_pdf_urls(pdf_urls: list[str], user_id: str):
+def ingest_pdf_urls(pdf_paths: list[str], user_id: str):
 
-    for url in pdf_urls:
-        response = requests.get(url, timeout=60)
-        response.raise_for_status()
+    for path in pdf_paths:
+        # If it's a URL → download
+        if path.startswith("http://") or path.startswith("https://"):
+            response = requests.get(path, timeout=60)
+            response.raise_for_status()
 
-        filename = get_filename(url)
-        with open(filename, "wb") as f:
-            f.write(response.content)
+            filename = get_filename(path)
+            with open(filename, "wb") as f:
+                f.write(response.content)
 
-        loader = DoclingLoader(file_path=filename)
+            file_path = filename
+            source_url = path
+
+        # Else → local uploaded file
+        else:
+            file_path = path
+            source_url = path  # stored as reference
+
+            filename = os.path.basename(file_path)
+
+        loader = DoclingLoader(file_path=file_path)
         docs = loader.load()
 
         for page_index, doc in enumerate(docs):
@@ -230,9 +243,6 @@ def ingest_pdf_urls(pdf_urls: list[str], user_id: str):
                 continue
 
             page_no = extract_page_no(doc, page_index + 1)
-
-            print("doc.metadata:", doc.metadata)
-
             chunks = chunk_text(text)
             embeddings_list = embed_texts(chunks)
 
@@ -242,7 +252,7 @@ def ingest_pdf_urls(pdf_urls: list[str], user_id: str):
                     {
                         "content": chunk,
                         "embedding": emb,
-                        "url": url,
+                        "url": source_url,
                         "document_title": filename,
                         "page_no": page_no,
                         "section": extract_section(chunk),
@@ -257,15 +267,29 @@ def ingest_pdf_urls(pdf_urls: list[str], user_id: str):
 # ---------- INGEST ENDPOINT ----------
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest_pdf(
-    request: IngestRequest, user_id: str = Depends(verify_supabase_jwt)
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_supabase_jwt),
 ):
     try:
-        url = str(request.filepath)
-        ingest_pdf_urls([url], user_id)
+        if file.content_type != "application/pdf":
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+        # Create temp directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir) / file.filename
+
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            # Pass temp file path as "url" equivalent
+            ingest_pdf_urls([str(temp_path)], user_id)
 
         return IngestResponse(
-            status="success", message="PDF ingested successfully", processed_urls=[url]
+            status="success",
+            message="PDF uploaded and ingested successfully",
+            processed_urls=[file.filename],
         )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -315,34 +339,6 @@ Context:
 Question:
 {user_question}
 """
-
-
-# @app.post("/v1/chat/completions")
-# def chat_completions(req: ChatRequest):
-#     user_message = next(m.content for m in reversed(req.messages) if m.role == "user")
-#     docs = retrieve_context(user_message)
-#     prompt = build_prompt(user_message, docs)
-
-#     # Groq API call
-#     response = groq.chat_completion(
-#         model=req.model or "gpt-4o-mini",
-#         messages=[{"role": "user", "content": prompt}],
-#         temperature=req.temperature,
-#     )
-
-#     return {
-#         "id": "chatcmpl-medrag",
-#         "choices": [
-#             {
-#                 "index": 0,
-#                 "message": {
-#                     "role": "assistant",
-#                     "content": response.choices[0].message.content,
-#                 },
-#                 "finish_reason": "stop",
-#             }
-#         ],
-#     }
 
 
 @app.post("/v1/chat/completions")

@@ -24,7 +24,9 @@ export default function Page() {
     const [user, setUser] = useState<any>(null);
     const [accessToken, setAccessToken] = useState<string | null>(null);
 
-    const [pdfUrl, setPdfUrl] = useState('');
+
+    const [pdfFile, setPdfFile] = useState<File | null>(null);
+
     const [messages, setMessages] = useState<Message[]>([]);
     const [question, setQuestion] = useState('');
     const [ingested, setIngested] = useState(false);
@@ -66,18 +68,24 @@ export default function Page() {
 
     /* ------------------ INGEST ------------------ */
     async function ingestPdf() {
-        if (!pdfUrl || !accessToken) return;
+        if (!pdfFile || !accessToken) return;
 
-        await fetch(`${API_BASE}/ingest`, {
+        const formData = new FormData();
+        formData.append('file', pdfFile);
+
+        const res = await fetch(`${API_BASE}/ingest`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 Authorization: `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ filepath: pdfUrl }),
+            body: formData,
         });
-        console.log("Access token:", accessToken);
 
+        if (!res.ok) {
+            const err = await res.text();
+            alert(`Ingestion failed: ${err}`);
+            return;
+        }
 
         setIngested(true);
         alert('PDF ingested successfully');
@@ -165,21 +173,31 @@ export default function Page() {
                 )}
 
                 {/* ------------------ PDF Upload ------------------ */}
-                <div className="flex gap-2 mb-6">
-                    <input
-                        className="flex-1 border rounded px-3 py-2"
-                        placeholder="Paste PDF URL"
-                        value={pdfUrl}
-                        onChange={(e) => setPdfUrl(e.target.value)}
-                        disabled={!isAuthed}
-                    />
-                    <button
-                        onClick={ingestPdf}
-                        disabled={!isAuthed}
-                        className="bg-blue-600 text-white px-4 rounded disabled:opacity-50"
-                    >
-                        Ingest
-                    </button>
+                <div className="mb-6">
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="file"
+                            accept="application/pdf"
+                            disabled={!isAuthed}
+                            onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+                            className="flex-1 text-sm"
+                        />
+
+                        <button
+                            onClick={ingestPdf}
+                            disabled={!isAuthed || !pdfFile}
+                            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+                        >
+                            Upload & Ingest
+                        </button>
+                    </div>
+
+
+                    {pdfFile && (
+                        <div className="text-xs text-gray-600 mt-2">
+                            Selected: {pdfFile.name} ({(pdfFile.size / 1024 / 1024).toFixed(2)} MB)
+                        </div>
+                    )}
                 </div>
 
                 {/* ------------------ Chat ------------------ */}
