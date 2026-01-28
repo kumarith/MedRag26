@@ -1,0 +1,12 @@
+OPENAI_API_KEY = xx
+SUPABASE_URL = https://xxx.supabase.co
+SUPABASE_KEY = xx
+SUPABASE_JWT_SECRET=your-supabase-jwt-secret-here
+SUPABASE_JWT_PUBLIC_KEY=c4b32127-471b-4eab-a1d1-834f4d74934f
+SUPABASE_JWT_ISSUER=https://xxx.supabase.co/auth/v1
+SUPABASE_PROJECT_REF=xxx
+
+EMBED_MODEL = text-embedding-3-small
+TABLE_NAME = medknowledge
+
+GROQ_API_KEY=xxx
